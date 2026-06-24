@@ -1,0 +1,2 @@
+models/cnn_classifier.pt filter=lfs diff=lfs merge=lfs -text
+models/cnn_dataset.npz filter=lfs diff=lfs merge=lfs -text
