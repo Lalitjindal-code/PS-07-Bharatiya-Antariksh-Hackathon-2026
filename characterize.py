@@ -494,20 +494,20 @@ def report_fit_vs_known(
           f"|  error={depth_err_pct:.1f}%")
     print(f"  Duration (h) : fit={dur_rec:.3f}  |  known={known['duration_hours']:.3f}  "
           f"|  error={dur_err_pct:.1f}%")
-    print(f"  Rp/Rs        : {fit_params['rp_val']:.4f} ± {fit_params['rp_err']:.5f}"
+    print(f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- {fit_params['rp_err']:.5f}"
           if not np.isnan(fit_params["rp_err"])
-          else f"  Rp/Rs        : {fit_params['rp_val']:.4f} ± NaN (covariance unavailable)")
-    print(f"  a/Rs         : {fit_params['a_rs_val']:.2f} ± {fit_params['a_rs_err']:.3f}"
+          else f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- NaN (covariance unavailable)")
+    print(f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- {fit_params['a_rs_err']:.3f}"
           if not np.isnan(fit_params["a_rs_err"])
-          else f"  a/Rs         : {fit_params['a_rs_val']:.2f} ± NaN")
-    print(f"  Inclination  : {fit_params['inc_val']:.3f} ± {fit_params['inc_err']:.4f} deg"
+          else f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- NaN")
+    print(f"  Inclination  : {fit_params['inc_val']:.3f} +/- {fit_params['inc_err']:.4f} deg"
           if not np.isnan(fit_params["inc_err"])
-          else f"  Inclination  : {fit_params['inc_val']:.3f} ± NaN deg")
-    print(f"  Baseline     : {fit_params['baseline_val']:.6f} ± {fit_params['baseline_err']:.2e}"
+          else f"  Inclination  : {fit_params['inc_val']:.3f} +/- NaN deg")
+    print(f"  Baseline     : {fit_params['baseline_val']:.6f} +/- {fit_params['baseline_err']:.2e}"
           if not np.isnan(fit_params["baseline_err"])
-          else f"  Baseline     : {fit_params['baseline_val']:.6f} ± NaN")
-    print(f"  chi² reduced : {fit_params['redchi']:.4f}  "
-          f"(ideal ≈ 1.0; >2 suggests poor fit or underestimated errors)")
+          else f"  Baseline     : {fit_params['baseline_val']:.6f} +/- NaN")
+    print(f"  chi^2 reduced : {fit_params['redchi']:.4f}  "
+          f"(ideal ~ 1.0; >2 suggests poor fit or underestimated errors)")
     print(f"  Fit converged: {'YES' if fit_params['fit_ok'] else 'NO — treat results with caution'}")
 
     # Honest commentary

@@ -277,8 +277,8 @@ def eval_model(model, params: TransitParams) -> np.ndarray:
         Flux values.
     """
     if BATMAN_AVAILABLE:
-        # Update batman params in place
-        bp = model.params
+        # Create a new batman params object for evaluation
+        bp = batman.TransitParams()
         bp.t0 = params.t0
         bp.per = params.per
         bp.rp = params.rp
