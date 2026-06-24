@@ -1,0 +1,2 @@
+# This directory stores downloaded FITS files (cached by lightkurve).
+# Files here are large and should be added to .gitignore.

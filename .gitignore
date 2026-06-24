@@ -1,0 +1,10 @@
+.venv/
+data/*.fits
+data/*.cache
+data/mastDownload/
+plots/*.png
+models/*.joblib
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
