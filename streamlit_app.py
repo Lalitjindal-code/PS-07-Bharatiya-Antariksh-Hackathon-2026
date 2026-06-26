@@ -246,11 +246,30 @@ if result:
     )
     verdict_emoji = "✅" if "planet" in clf else "⚠️" if "binary" in clf or "false" in clf else "❌"
 
+    _rp_earth = result.get("planet_radius_earth", None)
+    _n_tr     = result.get("n_transits_observed", "?")
+    _redchi   = result.get("fit_redchi", None)
+    _fit_ok   = result.get("fit_ok", False)
+    _baseline = result.get("baseline_days", "?")
+    _wtime    = result.get("pipeline_wall_time_s", "?")
+    _depth_ppm = result.get("depth_ppm", None)
+
+    fit_badge_color = "#10b981" if _fit_ok else "#ef4444"
+    fit_badge_text  = f"redχ²={_redchi:.2f}" if _redchi and np.isfinite(float(_redchi)) else "fit uncertain"
+
+    rp_str = f"{_rp_earth} R⊕" if _rp_earth else "—"
+
     st.markdown(f"""
     <div class="{verdict_class}" style="margin-bottom:2rem">
       <div>
         <div class="verdict-title">{verdict_emoji} {clf.replace("_", " ").title()}</div>
         <p class="verdict-subtitle">{result.get('vetting_verdict', 'Analysis complete')}</p>
+        <p style="margin:0.6rem 0 0 0;font-size:0.9rem;color:rgba(255,255,255,0.6)">
+          SNR = <strong style="color:white">{snr:.1f}</strong>
+          &nbsp;•&nbsp; Rp = <strong style="color:white">{rp_str}</strong>
+          &nbsp;•&nbsp; {_n_tr} transits
+          &nbsp;•&nbsp; <span style="color:{fit_badge_color};font-weight:700">{fit_badge_text}</span>
+        </p>
       </div>
       <div class="verdict-conf">
         {conf:.1f}%
@@ -259,17 +278,15 @@ if result:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- Key metrics grid ---
-    col1, col2, col3, col4 = st.columns(4)
-    def _mc(col, label, value, sub=""):
+    col1, col2, col3, col4, col5 = st.columns(5)
+    def _mc(col, label, value, sub="", accent="#38bdf8"):
         col.markdown(f"""
         <div class="metric-card">
           <div class="label">{label}</div>
-          <div class="value">{value}</div>
+          <div class="value" style="font-size:1.6rem;color:{accent}">{value}</div>
           <div class="sub">{sub}</div>
         </div>""", unsafe_allow_html=True)
 
-    # Helper to format uncertainty sub-label cleanly (no ±nan)
     def _unc(val, fmt=".1e", unit=""):
         if val is None: return ""
         try:
@@ -280,21 +297,47 @@ if result:
             return ""
         return f"±{v:{fmt}} {unit}".strip()
 
-    pu = result.get("period_uncertainty", None)
-    du = result.get("depth_uncertainty_pct", None)
+    pu  = result.get("period_uncertainty", None)
+    du  = result.get("depth_uncertainty_pct", None)
     dhu = result.get("duration_uncertainty_hours", None)
+    fap_note = result.get("fap_note", "")
 
     _mc(col1, "Period",   f"{result['period_days']:.5f} d",
         _unc(pu, ".2e", "d") or "BLS period")
-    _mc(col2, "Depth",    f"{result['depth_pct']:.4f} %",
-        _unc(du, ".2e", "%") or "transit depth")
+    _mc(col2, "Depth",
+        f"{result['depth_pct']:.4f} %",
+        (f"{_depth_ppm:.1f} ppm" if _depth_ppm else "") + (" " + _unc(du, ".2e", "%") if _unc(du, ".2e", "%") else ""))
     _mc(col3, "Duration", f"{result['duration_hours']:.3f} h",
-        _unc(dhu, ".3f", "h") or "transit duration")
+        _unc(dhu, ".3f", "h") or "batman-fitted")
     _mc(col4, "SNR",
         f"{snr:.1f}" if np.isfinite(snr) else "—",
-        f"FAP={fap:.4f}" if np.isfinite(fap) else "FAP not computed")
+        f"FAP = {fap:.4f}" if np.isfinite(fap) else "FAP not computed")
+    _mc(col5, "Planet Radius",
+        rp_str,
+        f"Rp/Rs = {result.get('rp_rs', '?')}",
+        accent="#a78bfa")
+
+    if fap_note:
+        st.caption(f"ℹ️ {fap_note}")
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1.5rem">
+      <div style="background:rgba(30,41,59,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.5rem 1rem;font-size:0.85rem;color:#94a3b8">
+        🔭 <strong style="color:#e2e8f0">{_n_tr}</strong> transits observed
+      </div>
+      <div style="background:rgba(30,41,59,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.5rem 1rem;font-size:0.85rem;color:#94a3b8">
+        📅 <strong style="color:#e2e8f0">{_baseline}</strong> day baseline
+      </div>
+      <div style="background:rgba(30,41,59,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.5rem 1rem;font-size:0.85rem;color:#94a3b8">
+        ⏱️ Pipeline: <strong style="color:#e2e8f0">{_wtime}s</strong>
+      </div>
+      <div style="background:rgba(30,41,59,0.6);border:1px solid rgba({('6,78,59' if _fit_ok else '127,29,29')},0.6);border-radius:10px;padding:0.5rem 1rem;font-size:0.85rem">
+        🔬 Fit: <strong style="color:{fit_badge_color}">{fit_badge_text}</strong>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # --- Two-column layout: vetting + probabilities ---
     c_left, c_right = st.columns(2)
@@ -320,7 +363,14 @@ if result:
               "No centroid shift",
               "Centroid shifted (possible blend!)")
 
-        st.markdown(f"**Vetting score:** {result.get('vetting_score', '?')} / 5")
+        vs = result.get('vetting_score', '?')
+        vs_color = "#10b981" if isinstance(vs, int) and vs >= 3 else "#f59e0b" if isinstance(vs, int) and vs >= 0 else "#ef4444"
+        st.markdown(
+            f"**Vetting score:** "
+            f'<span style="color:{vs_color};font-size:1.2em;font-weight:800">{vs}</span>'
+            f' <span style="color:#64748b">/ 5 &nbsp;(range −5 to +5)</span>',
+            unsafe_allow_html=True
+        )
 
     with c_right:
         st.markdown("### 🤖 Class Probabilities")
@@ -328,15 +378,20 @@ if result:
         label_map = {"PC": "Planet Candidate", "AFP": "Eclipsing Binary / FP", "NTP": "Noise"}
         colors = {"PC": "#4fc3f7", "AFP": "#ef9a9a", "NTP": "#b0bec5"}
         for k, v in sorted(probs.items(), key=lambda x: -x[1]):
+            label = label_map.get(k, k)
+            color = colors.get(k, "#78909c")
             bar_pct = int(v * 100)
-            label   = label_map.get(k, k)
-            color   = colors.get(k, "#78909c")
-            st.markdown(f"**{label}** — {v*100:.1f}%")
             st.markdown(
-                f'<div style="background:#1e2a3a;border-radius:6px;height:12px;margin-bottom:8px">'
-                f'<div style="background:{color};width:{bar_pct}%;height:100%;border-radius:6px"></div>'
-                f'</div>', unsafe_allow_html=True
+                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+                f'<div style="width:140px;font-size:0.85rem;color:#cbd5e1;font-weight:600">{label}</div>'
+                f'<div style="flex:1;background:#1e2a3a;border-radius:8px;height:14px">'
+                f'<div style="background:{color};width:{bar_pct}%;height:100%;border-radius:8px;'
+                f'transition:width 0.6s ease"></div></div>'
+                f'<div style="width:46px;text-align:right;font-size:0.9rem;font-weight:700;color:{color}">{v*100:.1f}%</div>'
+                f'</div>',
+                unsafe_allow_html=True
             )
+
 
     # --- Known-value comparison ---
     if "known_value_comparison" in result:

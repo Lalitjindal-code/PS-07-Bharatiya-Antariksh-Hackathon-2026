@@ -73,6 +73,8 @@ def run_pipeline(
     # -------------------------------------------------------------------
     logger.info("[Phase 4] Detrending …")
     from detrend import run_detrending
+    _cadence_days = cadence_min / 1440.0
+    _period_min   = max(0.5, 3.0 * _cadence_days)   # IMPROVE-02/05 floor
     _, detrended, window_pts = run_detrending(
         time=time, flux=flux,
         period_max_days=baseline / 3.0,
@@ -80,6 +82,7 @@ def run_pipeline(
         method="savgol",
         target_id=target_id,
         save_plot=save_plots,
+        period_min_days=_period_min,   # IMPROVE-05: window vs period check
     )
     logger.info("  Window = %d pts | std = %.4e", window_pts, float(detrended.std()))
 
@@ -96,7 +99,7 @@ def run_pipeline(
     time_bls, det_bls, err_bls = bin_lc_for_bls(
         time, detrended, flux_err, target_cadence_min=bin_cadence_min
     )
-    period_grid   = build_period_grid(baseline)
+    period_grid   = build_period_grid(baseline, cadence_days=cadence_min / 1440.0)
     duration_grid = build_duration_grid()
     bls_result, best_signal = run_bls(
         time_bls, det_bls, err_bls, period_grid, duration_grid
@@ -150,6 +153,8 @@ def run_pipeline(
     from significance import run_significance
     # Pass fitted depth (more accurate than BLS box estimate) for SNR calculation
     fit_depth_ppm = fit_params.get("depth_ppm_val", None)
+    if fit_depth_ppm is not None and (not np.isfinite(fit_depth_ppm) or fit_depth_ppm < 1.0):
+        fit_depth_ppm = None
     sig = run_significance(
         time=time, flux=detrended, best_signal=best_signal,
         n_fap_trials=n_fap_trials, rng_seed=rng_seed,
@@ -178,8 +183,8 @@ def run_pipeline(
     _bls_dur_h     = float(best_signal["duration"]) * 24.0
     depth_ppm  = float(fit_params.get("depth_ppm_val", _bls_depth_ppm))
     duration_h = float(fit_params.get("duration_h_val", _bls_dur_h))
-    if not np.isfinite(depth_ppm):  depth_ppm  = _bls_depth_ppm
-    if not np.isfinite(duration_h): duration_h = _bls_dur_h
+    if not np.isfinite(depth_ppm) or depth_ppm < 1.0: depth_ppm  = _bls_depth_ppm
+    if not np.isfinite(duration_h) or duration_h <= 0: duration_h = _bls_dur_h
 
     vetting_flags = {
         "odd_even_consistent":        vet_tests.get("odd_even", {}).get("score", 0) == 1,
@@ -193,18 +198,32 @@ def run_pipeline(
         period_d ** 2 / max(_baseline * _n_periods, 1e-6),
         1e-6, period_d / 100.0
     ))
+    _rp_rs = float(fit_params.get("rp_val", np.sqrt(max(depth_ppm / 1e6, 0))))
+    _planet_r_earth = round(_rp_rs * star_radius_rsun * 109.076, 3)
+    _n_transits = int(max(_baseline / period_d, 1)) if period_d > 0 else 1
 
     result: dict = {
         "target_id":                 target_id,
         "mission":                   mission,
         "period_days":               round(period_d, 6),
         "period_uncertainty":        round(period_grid_sigma, 7),
-        "depth_pct":                 round(depth_ppm / 1e4, 4),   # ppm → %
+        "depth_pct":                 round(depth_ppm / 1e4, 4),
+        "depth_ppm":                 round(depth_ppm, 2),
         "depth_uncertainty_pct":     round(float(fit_params.get("depth_ppm_err", np.nan)) / 1e4, 6),
         "duration_hours":            round(duration_h, 4),
         "duration_uncertainty_hours": round(float(fit_params.get("duration_h_err", np.nan)), 4),
+        "planet_radius_earth":       _planet_r_earth,
+        "rp_rs":                     round(_rp_rs, 5),
+        "n_transits_observed":       _n_transits,
+        "baseline_days":             round(_baseline, 2),
         "snr":                       round(float(sig["snr"]), 3),
         "false_alarm_probability":   round(float(sig.get("fap", np.nan)), 5),
+        "fap_note":                  ("NaN = FAP not computed (skip_fap=True); "
+                                      "run with FAP enabled for significance test")
+                                     if skip_fap or not np.isfinite(float(sig.get("fap", np.nan)))
+                                     else "FAP computed via phase-shuffle bootstrap",
+        "fit_redchi":                round(float(fit_params.get("redchi", np.nan)), 4),
+        "fit_ok":                    bool(fit_params.get("fit_ok", False)),
         "vetting":                   vetting_flags,
         "vetting_score":             int(vet_summary.get("overall_score", 0)),
         "vetting_verdict":           str(vet_summary.get("disposition", "unknown")),

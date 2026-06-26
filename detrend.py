@@ -1,3 +1,4 @@
+
 """
 detrend.py
 ==========
@@ -36,7 +37,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import matplotlib
 matplotlib.use("Agg")   # non-interactive backend — safe for servers
@@ -401,6 +402,7 @@ def run_detrending(
     method: str = "savgol",
     target_id: str = "target",
     save_plot: bool = True,
+    period_min_days: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     End-to-end detrending: estimate window → apply filter → normalise.
@@ -421,6 +423,10 @@ def run_detrending(
         Target identifier for plot labelling.
     save_plot : bool
         Whether to save the before/after detrending plot.
+    period_min_days : float or None
+        Minimum period being searched [days].  When provided, a safety check
+        warns if the smoothing window ≥ period_min — at that point the filter
+        will partially suppress the transit signal (IMPROVE-05).
 
     Returns
     -------
@@ -438,6 +444,15 @@ def run_detrending(
         "window=%.3f d / %d points.",
         method, max_dur, window_days, window_pts,
     )
+
+    # IMPROVE-05: warn if smoothing window >= shortest search period
+    if period_min_days is not None and window_days >= period_min_days:
+        logger.warning(
+            "IMPROVE-05: smoothing window (%.3f d) >= min search period (%.3f d). "
+            "SavGol/Wotan may partially suppress short-period transit signals. "
+            "Consider reducing period_max_days or using a shorter-window method.",
+            window_days, period_min_days,
+        )
 
     if method == "savgol":
         trend, detrended = detrend_savgol(time, flux, window_pts, polyorder=2)
@@ -460,6 +475,7 @@ def run_detrending(
         )
 
     return trend, detrended, window_pts
+
 
 
 # ---------------------------------------------------------------------------

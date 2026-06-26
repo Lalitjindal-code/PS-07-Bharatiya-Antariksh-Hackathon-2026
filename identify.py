@@ -164,6 +164,7 @@ def build_period_grid(
     min_period: float = 0.5,
     max_fraction: float = 1.0 / 5.0,
     n_per_decade: int = 5000,
+    cadence_days: Optional[float] = None,
 ) -> np.ndarray:
     """
     Build a logarithmically-spaced period grid.
@@ -190,12 +191,27 @@ def build_period_grid(
         ``1/3`` = bare minimum (more susceptible to edge-effect false peaks).
     n_per_decade : int
         Number of grid points per decade (controls resolution).
+    cadence_days : float or None
+        Median cadence of the light curve [days].  When provided, ``min_period``
+        is raised to ``max(min_period, 3 × cadence_days)`` so that the BLS
+        search never probes periods shorter than 3 cadences — a known source
+        of false detections in Kepler 30-min long-cadence data (IMPROVE-02).
 
     Returns
     -------
     np.ndarray
         1-D period grid [days].
     """
+    # IMPROVE-02: cadence-aware minimum period guard
+    if cadence_days is not None and cadence_days > 0:
+        cadence_min_period = 3.0 * cadence_days
+        if cadence_min_period > min_period:
+            logger.info(
+                "IMPROVE-02: raising min_period %.3f → %.3f d (= 3 × cadence %.3f d).",
+                min_period, cadence_min_period, cadence_days,
+            )
+            min_period = cadence_min_period
+
     max_period = baseline_days * max_fraction
     if max_period <= min_period:
         raise ValueError(

@@ -140,6 +140,12 @@ def compute_snr(
     oot_median = np.median(oot_for_noise)
     mad = np.median(np.abs(oot_for_noise - oot_median))
     sigma_oot = float(1.4826 * mad)
+    if sigma_oot > 0:
+        clip_mask = np.abs(oot_for_noise - oot_median) < 3.0 * sigma_oot
+        if clip_mask.sum() >= 10:
+            oot_clipped = oot_for_noise[clip_mask]
+            mad2 = np.median(np.abs(oot_clipped - np.median(oot_clipped)))
+            sigma_oot = float(1.4826 * mad2) if mad2 > 0 else sigma_oot
 
     if sigma_oot == 0.0:
         sigma_oot = float(np.std(oot_for_noise, ddof=1))
@@ -147,6 +153,7 @@ def compute_snr(
     noise_on_transit = sigma_oot / np.sqrt(max(n_in, 1))
 
     snr = float(depth / noise_on_transit) if noise_on_transit > 0 else np.nan
+
 
     result = {
         "snr": snr,
