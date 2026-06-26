@@ -79,15 +79,16 @@ def load_data() -> tuple[np.ndarray, np.ndarray, list]:
 def train_and_evaluate() -> None:
     X, y, feat_names = load_data()
 
-    # Impute missing values (median strategy — safe for astronomical data)
-    imp = SimpleImputer(strategy="median")
-    X_imp = imp.fit_transform(X)
-
-    # Stratified 80/20 split — set random_state for reproducibility
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_imp, y, test_size=0.20, random_state=RANDOM_SEED, stratify=y
+    # Stratified 80/20 split FIRST — imputer must not see test data
+    X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=RANDOM_SEED, stratify=y
     )
     logger.info("Train: %d | Test: %d", len(y_train), len(y_test))
+
+    # Impute missing values on train only, then transform test with same statistics
+    imp = SimpleImputer(strategy="median")
+    X_train = imp.fit_transform(X_train_raw)   # fit only on train
+    X_test  = imp.transform(X_test_raw)         # transform test (no fit)
 
     # SMOTE oversampling to address class imbalance (planets are rare)
     sm = SMOTE(random_state=RANDOM_SEED)

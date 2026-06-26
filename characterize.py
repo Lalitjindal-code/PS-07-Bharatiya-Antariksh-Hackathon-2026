@@ -176,9 +176,9 @@ def init_transit_params(
     rp = np.sqrt(max(depth, 1e-10))   # Rp/Rs; depth = (Rp/Rs)^2 for uniform disk
 
     # a/Rs from the geometric relation for b=0, circular orbit:
-    # T_dur = (period / pi) * arcsin(sqrt((1+rp)^2 - b^2) / a_rs)
-    # For b=0: T_dur ≈ (period / pi) * (1 / a_rs) → a_rs ≈ period / (pi * T_dur)
-    a_rs = max(period / (np.pi * duration_days), 2.0)  # ensure physically valid
+    # T_dur = (P/pi) * arcsin((1+k)/a_rs) ≈ (P/pi) * (1+k)/a_rs
+    # → a_rs ≈ (P / (pi * T_dur)) * (1 + k)
+    a_rs = max(period * (1.0 + rp) / (np.pi * duration_days), 2.0)
 
     params = TransitParams()
     params.t0 = t0
@@ -226,6 +226,8 @@ def _build_lmfit_params(bp: TransitParams) -> Parameters:
     # so the fit can correct BLS epoch imprecision without losing the transit.
     half_dur_search = min(bp.per * 0.5, max(bp.per * 0.1, 2.0 * bp.per / (np.pi * bp.a)))
     p.add("t0",   value=0.0,  min=-half_dur_search, max=+half_dur_search)
+    # Period is not refined: BLS precision (~0.01%) is better than what LM
+    # can improve without full phase-wrapping, and floating it risks divergence.
     p.add("per",  value=bp.per, min=bp.per * 0.95, max=bp.per * 1.05, vary=False)
     # Rp/Rs: strictly positive, < 0.5 (would be a grazing giant planet otherwise)
     p.add("rp",   value=bp.rp,  min=1e-5,  max=0.5)
@@ -296,7 +298,7 @@ def _transit_residual(
     t_abs = time * period   # [days], centred at 0 corresponds to phase=0
 
     model_obj = make_batman_model(bp, t_abs)
-    model_flux = eval_model(model_obj, bp) * v["baseline"]
+    model_flux = eval_model(model_obj, bp, t_abs) * v["baseline"]
 
     return (flux - model_flux) / flux_err
 
@@ -409,7 +411,7 @@ def fit_transit_lmfit(
         sigma_residual = float(np.std(residuals * fe_fit, ddof=1))   # per-point scatter
 
         # Identify in-transit points (|phase| < half-duration in phase units)
-        dur_in_phase = a_val and (1.0 / (np.pi * a_val)) or 0.05
+        dur_in_phase = (1.0 / (np.pi * a_val)) if a_val > 0 and np.isfinite(a_val) else 0.05
         in_transit_mask = np.abs(ph_fit) < max(dur_in_phase * 1.5, 0.02)
         N_in = max(int(in_transit_mask.sum()), 1)
 
@@ -441,9 +443,13 @@ def fit_transit_lmfit(
     duration_val = (init_params.per / np.pi) * np.arcsin(sin_half)   # days
     duration_err = np.nan   # propagated from a_rs/inc uncertainties — complex, skip here
 
-    # Ingress/egress time: T_ingress = T_duration * Rp/Rs / (1 + Rp/Rs)
-    # (fraction of transit spent in ingress for b=0)
-    ingress_val = duration_val * rp_val / (1.0 + rp_val)
+    # Ingress/egress time (Seager & Malléen-Ornelas 2003):
+    # T_in = (P/2pi) * [arcsin(sqrt((1+k)^2 - b^2)/a) - arcsin(sqrt((1-k)^2 - b^2)/a)]
+    sin_in_sq = max((1.0 + rp_val) ** 2 - b_val ** 2, 0.0)
+    sin_eg_sq = max((1.0 - rp_val) ** 2 - b_val ** 2, 0.0)
+    sin_in = np.clip(np.sqrt(sin_in_sq) / a_val, 0.0, 1.0)
+    sin_eg = np.clip(np.sqrt(sin_eg_sq) / a_val, 0.0, 1.0)
+    ingress_val = (init_params.per / (2.0 * np.pi)) * (np.arcsin(sin_in) - np.arcsin(sin_eg))
     ingress_err = np.nan
 
     fit_params = {
@@ -695,7 +701,7 @@ def compute_model_curve(
     bp.limb_dark = "quadratic"
 
     model_obj = make_batman_model(bp, t_abs)
-    model_flux = eval_model(model_obj, bp) * v["baseline"]
+    model_flux = eval_model(model_obj, bp, t_abs) * v["baseline"]
     return model_phase, model_flux
 
 

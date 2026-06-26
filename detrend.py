@@ -73,8 +73,9 @@ def estimate_max_transit_duration(period_max_days: float) -> float:
         T_max ≈ (period / π)^(1/3) × C    [days]
 
     where C absorbs R★/R☉ and G/M★ in a dimensionally-consistent way.
-    For a solar-type star this simplifies to ~0.25 × P^(1/3) hours,
-    or ~0.0104 × P^(1/3) days.
+    For a solar-type star (R★=R☉, M★=M☉), correctly derived from Kepler's
+    3rd law this gives C ≈ 0.0758, so T_max ≈ 0.0758 × P^(1/3) days.
+    Sanity check: P=365.25 d (Earth) → T_max ≈ 13.1 h (correct textbook value).
 
     This is a *conservative upper bound* — real transit durations will be
     shorter.  Using the upper bound ensures the detrending window is wide
@@ -90,11 +91,11 @@ def estimate_max_transit_duration(period_max_days: float) -> float:
     float
         Estimated maximum transit duration [days].
     """
-    # Hippke et al. 2019, §3.1 — physical upper bound for Sun-like host
-    # T_max ≈ 0.0104 * P^(1/3)  days   (for P in days, R★=R☉, M★=M☉)
+    # Physical upper bound for Sun-like host (Kepler's 3rd law):
+    # T_max ≈ 0.0758 * P^(1/3)  days   (for P in days, R★=R☉, M★=M☉)
     # We add a 20% safety margin so that borderline-long transits are
     # still safely covered.
-    t_max = 0.0104 * (period_max_days ** (1.0 / 3.0)) * 1.20
+    t_max = 0.0758 * (period_max_days ** (1.0 / 3.0)) * 1.20
     return float(t_max)
 
 

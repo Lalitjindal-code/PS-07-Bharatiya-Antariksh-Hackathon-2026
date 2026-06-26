@@ -32,7 +32,7 @@ PLOTS_DIR.mkdir(exist_ok=True)
 
 # Known reference values (period, depth_ppm, duration_h) for recovery comparison
 KNOWN_PARAMS = {
-    "KIC 11904151": {"period": 0.8375243, "depth_ppm": 1470.0, "duration_h": 1.811},
+    "KIC 11904151": {"period": 0.8375243, "depth_ppm": 152.0, "duration_h": 1.811},
 }
 
 
@@ -174,7 +174,7 @@ def run_pipeline(
     duration_h = float(best_signal["duration"]) * 24.0
 
     vetting_flags = {
-        "odd_even_consistent":       vet_tests.get("odd_even", {}).get("score", 0) >= 0,
+        "odd_even_consistent":       vet_tests.get("odd_even", {}).get("score", 0) == 1,
         "secondary_eclipse_detected": vet_tests.get("secondary", {}).get("score", 0) < 0,
         "centroid_shift_detected":   vet_tests.get("centroid", {}).get("score", 0) < 0,
     }
@@ -228,12 +228,12 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="PS-07 Exoplanet Pipeline — end-to-end runner")
     p.add_argument("--target",   default="KIC 11904151")
     p.add_argument("--mission",  default="Kepler", choices=["Kepler", "K2", "TESS"])
-    p.add_argument("--n-fap-trials", type=int, default=200,
+    p.add_argument("--n-fap-trials", type=int, default=1000,
                    help="Bootstrap FAP iterations (use 1000 for full quality)")
     p.add_argument("--skip-fap", action="store_true",
                    help="Skip bootstrap FAP for a faster run")
-    p.add_argument("--star-radius", type=float, default=1.065)
-    p.add_argument("--star-mass",   type=float, default=0.895)
+    p.add_argument("--star-radius", type=float, default=1.0)
+    p.add_argument("--star-mass",   type=float, default=1.0)
     p.add_argument("--no-plots",    action="store_true")
     return p.parse_args()
 

@@ -145,8 +145,8 @@ def test_odd_even(
 
     in_transit = np.abs(phase) < (duration / (2 * period))
 
-    odd_flux = flux[(in_transit) & (transit_num % 2 == 0)]
-    even_flux = flux[(in_transit) & (transit_num % 2 == 1)]
+    odd_flux = flux[(in_transit) & (transit_num % 2 == 1)]
+    even_flux = flux[(in_transit) & (transit_num % 2 == 0)]
 
     if len(odd_flux) < 5 or len(even_flux) < 5:
         return {
@@ -381,8 +381,8 @@ def test_centroid_shift(
 def test_duration_period_consistency(
     period_days: float,
     duration_days: float,
-    star_radius_rsun: float = 1.065,   # Kepler-10: R_star ≈ 1.065 R_sun
-    star_mass_msun: float = 0.895,     # Kepler-10: M_star ≈ 0.895 M_sun
+    star_radius_rsun: float = 1.0,
+    star_mass_msun: float = 1.0,
 ) -> Dict:
     """
     Test 4: Check whether the transit duration is physically consistent with
@@ -415,10 +415,7 @@ def test_duration_period_consistency(
     # R_sun = 0.00465 AU
     r_star_au = star_radius_rsun * 0.00465
 
-    # Maximum transit duration (central, circular orbit)
-    # T_max = (2 * R_s * P) / (2 * pi * a)  — in same units as P
-    t_max_days = (2.0 * r_star_au / (2.0 * np.pi * a_au)) * period_days * (2 * np.pi)
-    # Simplification: T_max = P * R_s / (pi * a)
+    # Maximum transit duration (central, circular orbit): T_max = P * R_s / (pi * a)
     t_max_days = period_days * r_star_au / (np.pi * a_au)
 
     ratio = duration_days / t_max_days
@@ -757,8 +754,8 @@ def run_vetting(
     flux_err: np.ndarray,
     best_signal: Dict,
     target_id: str = "target",
-    star_radius_rsun: float = 1.065,
-    star_mass_msun: float = 0.895,
+    star_radius_rsun: float = 1.0,
+    star_mass_msun: float = 1.0,
     save_plot: bool = True,
 ) -> Tuple[Dict, Dict]:
     """

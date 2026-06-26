@@ -19,11 +19,10 @@ Period-grid design
 ------------------
 - Minimum period: 0.5 days (sub-day periods are rare and require very fast
   cadence to characterise; below 0.5 d, BLS aliases become a problem).
-- Maximum period: ``baseline / 3`` — ensures at least 3 complete transit
-  epochs are visible in the data, which is the minimum needed for a robust
-  period detection.  This is the "Nyquist-aware" choice: with fewer than 3
-  transits it is impossible to distinguish a periodic signal from a single
-  or double event.
+- Maximum period: ``baseline / 5`` — ensures at least 5 complete transit
+  epochs are visible in the data (safer than baseline/3 which gives only 3
+  transits, the bare minimum for detection).  See `build_period_grid` for
+  details and the ``max_fraction`` parameter to override.
 
 Usage (standalone)
 ------------------
