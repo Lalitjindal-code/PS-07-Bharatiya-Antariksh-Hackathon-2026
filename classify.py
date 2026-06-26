@@ -26,7 +26,7 @@ FEATURE_NAMES = [
     "tce_period",       # orbital period [days]
     "tce_model_snr",    # model SNR
     "tce_bin_oedp_stat",# odd-even depth difference statistic
-    "tce_impact",       # impact parameter proxy (Rp/Rs)
+    "tce_impact",       # orbital impact parameter b = (a/Rs)*cos(inc)
     "tce_prad",         # planet radius proxy [R_earth]
 ]
 
@@ -52,7 +52,7 @@ def build_feature_vector(
     period_d: float,
     snr: float,
     odd_even_stat: float = np.nan,
-    rp_rs: float = np.nan,
+    impact_b: float = np.nan,
     prad_earth: float = np.nan,
 ) -> np.ndarray:
     """
@@ -65,8 +65,8 @@ def build_feature_vector(
     period_d      : orbital period [days]
     snr           : signal-to-noise ratio
     odd_even_stat : |odd_depth - even_depth| / pooled_std  (0 if not computed)
-    rp_rs         : Rp/Rs from batman fit  (used as impact proxy)
-    prad_earth    : planet radius in Earth radii  (nan → imputed by model)
+    impact_b      : orbital impact parameter b = (a/Rs)*cos(inc)
+    prad_earth    : planet radius in Earth radii  (nan -> imputed by model)
 
     Returns
     -------
@@ -78,7 +78,7 @@ def build_feature_vector(
         period_d,
         snr,
         odd_even_stat,
-        rp_rs,
+        impact_b,
         prad_earth,
     ]], dtype=float)
     return vec
@@ -130,32 +130,44 @@ def classify_from_pipeline_outputs(
     vet_results: dict,
     clf=None,
     imp=None,
+    star_radius_rsun: float = 1.0,
 ) -> Dict:
     """
     Convenience wrapper: extract features from pipeline dicts and classify.
 
     Parameters
     ----------
-    best_signal  : from identify.run_bls()
-    fit_params   : from characterize.run_characterization()
-    snr_result   : from significance.run_significance()
-    vet_results  : from vet.run_vetting()  (test_results dict)
+    best_signal       : from identify.run_bls()
+    fit_params        : from characterize.run_characterization()
+    snr_result        : from significance.run_significance()
+    vet_results       : from vet.run_vetting()  (test_results dict)
+    star_radius_rsun  : stellar radius [R_sun]; used for planet radius calculation.
+                        Default 1.0 (generic solar). Pass TIC/KIC value for accuracy.
     """
-    depth_ppm   = float(best_signal.get("depth", 0.0)) * 1e6
-    duration_h  = float(best_signal.get("duration", 0.0)) * 24.0
+    rp_rs      = float(fit_params.get("rp_val", np.nan))
+    a_rs       = float(fit_params.get("a_rs_val", np.nan))
+    inc_deg    = float(fit_params.get("inc_val", 90.0))
+
+    # Use refined fit values for depth and duration (more accurate than raw BLS)
+    fit_depth_ppm = float(fit_params.get("depth_ppm_val", np.nan))
+    fit_dur_h     = float(fit_params.get("duration_h_val", np.nan))
+    depth_ppm  = fit_depth_ppm if np.isfinite(fit_depth_ppm) else float(best_signal.get("depth", 0.0)) * 1e6
+    duration_h = fit_dur_h    if np.isfinite(fit_dur_h)     else float(best_signal.get("duration", 0.0)) * 24.0
+
     period_d    = float(best_signal.get("period", 0.0))
     snr         = float(snr_result.get("snr", np.nan))
-    rp_rs       = float(fit_params.get("rp_val", np.nan))
 
-    # Odd-even stat from vetting if available
+    # Real orbital impact parameter b = (a/Rs) * cos(inc)
+    impact_b = a_rs * np.cos(np.radians(inc_deg)) if np.isfinite(a_rs) and np.isfinite(inc_deg) else np.nan
+
     oe = vet_results.get("odd_even", {})
     odd_even_stat = float(oe.get("depth_diff_sigma", np.nan))
 
-    # Rough planet radius: Rp/Rs * R_sun_in_earth (R_sun ≈ 109 R_earth)
-    prad_earth = rp_rs * 109.0 if np.isfinite(rp_rs) else np.nan
+    # Planet radius: Rp/Rs * R_star. Default 1.0 R_sun; caller should pass target's R_star.
+    prad_earth = rp_rs * 109.076 * star_radius_rsun if np.isfinite(rp_rs) else np.nan
 
     fvec = build_feature_vector(
-        depth_ppm, duration_h, period_d, snr, odd_even_stat, rp_rs, prad_earth
+        depth_ppm, duration_h, period_d, snr, odd_even_stat, impact_b, prad_earth
     )
     result = classify_candidate(fvec, clf=clf, imp=imp)
     result["features_used"] = {

@@ -12,8 +12,8 @@ Responsibilities
    (Box-least-squares matched-filter SNR; see Kovacs et al. 2002, A&A 391, 369.)
 
 2. **False Alarm Probability (FAP)** via bootstrap phase-shuffling:
-   Randomly shuffle the phase of the detrended light curve N_trials times,
-   re-run BLS on each shuffle, record the maximum BLS power, and report what
+   Circular-shift (roll) the flux of the detrended light curve N_trials times,
+   re-run BLS on each shifted version, record the maximum BLS power, and report what
    fraction of trials achieved a power >= the real detection.
    (Jenkins et al. 2002 approach adapted for bootstrapped non-parametric FAP.)
 
@@ -199,7 +199,7 @@ def _run_bls_single(
     if period_max <= period_min:
         return np.nan
 
-    period_grid = np.linspace(period_min, period_max, n_periods)
+    period_grid = np.geomspace(period_min, period_max, n_periods)
     if duration_grid is None:
         duration_grid = np.linspace(0.01, 0.3, 50)
 
@@ -232,11 +232,12 @@ def compute_fap_bootstrap(
 
     Method
     ------
-    1. Identify out-of-transit cadences (using transit window ×1.5).
+    1. Identify out-of-transit cadences (using transit window x1.5).
     2. For each of N_trials trials:
-       a. Randomly shuffle the *flux values* of the full light curve
-          (preserving time stamps) — this destroys any periodic signal.
-       b. Run BLS on the shuffled series.
+       a. Circularly shift (roll) the flux values by a random amount —
+          this destroys the periodic transit signal while preserving
+          the autocorrelation / red-noise structure of the light curve.
+       b. Run BLS on the shifted series.
        c. Record the peak BLS power.
     3. FAP = fraction of trials with peak power >= real_power.
 
@@ -391,6 +392,7 @@ def run_significance(
     target_id: str = "target",
     save_plot: bool = True,
     skip_fap: bool = False,
+    fit_depth_ppm: float = None,
 ) -> Dict:
     """
     Run Phase 8 (statistical significance) and return a combined result dict.
@@ -415,7 +417,11 @@ def run_significance(
     period = float(best_signal["period"])
     t0 = float(best_signal["t0"])
     duration = float(best_signal["duration"])
-    depth = float(best_signal["depth"])
+    # Use fitted depth if provided (more accurate than BLS box depth).
+    if fit_depth_ppm is not None and np.isfinite(fit_depth_ppm):
+        depth = float(fit_depth_ppm) / 1e6
+    else:
+        depth = float(best_signal["depth"])
     real_power = float(best_signal.get("power", np.nan))
 
     # --- SNR ---
@@ -481,7 +487,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Phase 8 — Statistical Significance")
     p.add_argument("--target", default="KIC 11904151", help="Target ID")
     p.add_argument("--mission", default="Kepler", choices=["Kepler", "TESS"])
-    p.add_argument("--n-fap-trials", type=int, default=200,
+    p.add_argument("--n-fap-trials", type=int, default=1000,
                    help="Bootstrap iterations (use 1000 for publication-quality)")
     p.add_argument("--skip-fap", action="store_true",
                    help="Skip the bootstrap FAP (fast SNR-only mode)")

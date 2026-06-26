@@ -13,7 +13,7 @@ Solution
 This module tries to import ``batman`` first.  If that fails (ImportError),
 it falls back to a **pure-Python approximation** using the analytic
 Mandel-Agol formula for a quadratic limb-darkened transit, implemented
-entirely in NumPy.  The approximation is accurate to < 0.1% for typical
+entirely in NumPy.  This approximation captures depth and shape for typical
 transit parameters and is sufficient for the fitting stage.
 
 The fallback is explicitly labelled in every function that uses it, and a
@@ -46,7 +46,6 @@ except ImportError:
     warnings.warn(
         "batman-package C extension NOT available (likely no C compiler on Windows). "
         "Falling back to pure-Python Mandel-Agol approximation.  "
-        "This approximation is accurate to <0.1%% for Rp/Rs < 0.3.  "
         "Install Microsoft C++ Build Tools and re-run: pip install batman-package "
         "to get the full C-accelerated model.",
         ImportWarning,
@@ -104,9 +103,12 @@ def _uniform_transit_flux(
     )
     flux[partial] = 1.0 - area / np.pi
 
-    # Full occultation (planet entirely covers star — unlikely for exoplanets)
-    occ = z <= (p - 1.0)
-    flux[occ] = 0.0
+    # Full occultation (planet radius > star radius; not physical for exoplanets p < 1)
+    # This branch is dead code for typical use (p < 0.5 always for exoplanets).
+    # Kept for completeness when p >= 1.
+    if p >= 1.0:
+        occ = z <= (p - 1.0)
+        flux[occ] = 0.0
 
     return flux
 
@@ -150,7 +152,6 @@ class PurePythonTransitModel:
     Pure-Python Mandel-Agol transit model.
 
     SIMPLIFIED FALLBACK — used only when batman-package is not available.
-    Accuracy: < 0.1% error in depth for Rp/Rs < 0.3, compared to batman.
     Limb darkening is approximated by a first-order correction to the
     uniform disk solution.
 
@@ -180,7 +181,7 @@ class PurePythonTransitModel:
         )
         flux = _uniform_transit_flux(z, p["rp"])
 
-        # Approximate limb-darkening correction (first-order only)
+        # Approximate limb-darkening correction
         u = p.get("u", [0.3, 0.1])
         u1, u2 = u[0], u[1]
         # Scale depth by limb-darkening factor at disk centre
@@ -262,7 +263,7 @@ def make_batman_model(
         return PurePythonTransitModel(p_dict)
 
 
-def eval_model(model, params: TransitParams) -> np.ndarray:
+def eval_model(model, params: TransitParams, time: np.ndarray) -> np.ndarray:
     """
     Evaluate the transit model and return the flux array.
 
@@ -270,6 +271,8 @@ def eval_model(model, params: TransitParams) -> np.ndarray:
     ----------
     model : batman.TransitModel or PurePythonTransitModel
     params : TransitParams
+    time : np.ndarray
+        Time array [days] at which to evaluate the model.
 
     Returns
     -------
@@ -277,7 +280,6 @@ def eval_model(model, params: TransitParams) -> np.ndarray:
         Flux values.
     """
     if BATMAN_AVAILABLE:
-        # Create a new batman params object for evaluation
         bp = batman.TransitParams()
         bp.t0 = params.t0
         bp.per = params.per
@@ -296,4 +298,4 @@ def eval_model(model, params: TransitParams) -> np.ndarray:
             "u": params.u, "limb_dark": params.limb_dark,
         }
         model.params = p_dict
-        return model.light_curve(model.params.get("time", np.array([0.0])))
+        return model.light_curve(time)

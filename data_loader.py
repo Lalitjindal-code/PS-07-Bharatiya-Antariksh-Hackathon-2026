@@ -279,7 +279,8 @@ def sigma_clip_lc(
     mask = np.ones(len(flux), dtype=bool)
     for i in range(n_passes):
         median = np.median(flux[mask])
-        std = np.std(flux[mask])
+        mad = np.median(np.abs(flux[mask] - median))
+        std = 1.4826 * mad if mad > 0 else np.std(flux[mask], ddof=1)
         new_mask = np.abs(flux - median) < sigma * std
         n_clipped = int(np.sum(mask & ~new_mask))
         if n_clipped:

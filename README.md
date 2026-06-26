@@ -131,10 +131,19 @@ python train_classifier.py
 ## Tests
 
 ```bash
-pytest tests/ -v
+python test_all_part_d.py
 ```
 
-The test suite (`tests/test_synthetic.py`) uses a synthetic light curve (clearly labeled) to verify that each pipeline stage runs without error. It does **not** use real downloaded data.
+The test suite uses a synthetic light curve to verify that each pipeline stage runs without error. It does **not** use real downloaded data.
+
+---
+
+## Deployment (Streamlit Cloud)
+
+To deploy to [Streamlit Community Cloud](https://share.streamlit.io):
+1. Create a GitHub repository and push this code.
+2. **Note:** `models/rf_classifier.joblib` might be large (>100MB). Use [Git LFS](https://git-lfs.com/) to push it, or reduce `n_estimators` in `train_classifier.py` and retrain.
+3. Deploy directly from your repo on Streamlit Cloud!
 
 ---
 
