@@ -355,9 +355,18 @@ def fit_transit_lmfit(
         ph_fit, fl_fit, fe_fit = phase, flux, flux_err
         logger.info("Fitting unbinned phase curve (%d points).", len(ph_fit))
 
-    # Focus fit window around transit to avoid off-transit noise dominating
-    # (transit duration ≈ 2 * rp / a_rs in phase units for b≈0)
-    transit_half_width = 0.15   # ±15% phase window; generous to catch ingress/egress
+    # Focus fit window around transit to avoid off-transit noise dominating.
+    # BUG-10 fix: dynamic window based on transit duration in phase units.
+    # T_14 ≈ (P/π) * arcsin(√((1+k)² - b²) / a)  for circular orbit, b≈0:
+    #        ≈ (P/π) * (1+k) / a_rs               [phase units: divide by P]
+    # → phase_dur ≈ (1 + rp) / (π * a_rs)
+    # Use 2× as safety margin for ingress/egress; clamp to [0.10, 0.25].
+    _a_rs = max(float(init_params.a), 2.0)
+    _rp   = float(init_params.rp)
+    _phase_dur = (1.0 + _rp) / (np.pi * _a_rs)   # half-duration in phase units
+    transit_half_width = float(np.clip(2.0 * _phase_dur, 0.10, 0.25))
+    logger.debug("Transit fit window: ±%.3f phase (rp=%.4f, a_rs=%.2f)",
+                 transit_half_width, _rp, _a_rs)
     in_window = np.abs(ph_fit) < transit_half_width
     if in_window.sum() < 10:
         logger.warning("Fewer than 10 points in transit window — fitting full phase range.")

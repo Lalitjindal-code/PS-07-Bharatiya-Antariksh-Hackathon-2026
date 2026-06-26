@@ -418,7 +418,9 @@ def test_duration_period_consistency(
     # R_sun = 0.00465 AU
     r_star_au = star_radius_rsun * 0.00465
 
-    # Maximum transit duration (central, circular orbit): T_max = P * R_s / (pi * a)
+    # Maximum transit duration (central, circular orbit): T_max = P * R_s / (π * a)
+    # NOTE (BUG-07): valid for circular orbit, b=0, R_s << a (a > 5 R_s).
+    # For eccentric orbits multiply by √(1-e²)/(1±e·sin(ω)) — not implemented here.
     t_max_days = period_days * r_star_au / (np.pi * a_au)
 
     ratio = duration_days / t_max_days
@@ -484,7 +486,12 @@ def _v_shape_model(phase: np.ndarray, depth: float, t_total: float,
 
 
 def _bic(residuals: np.ndarray, n_params: int) -> float:
-    """Bayesian Information Criterion for a fit."""
+    """Bayesian Information Criterion for a fit (uniform noise assumption).
+
+    NOTE (IMPROVE-04): this assumes σ² = RSS/N (uniform per-point noise).
+    For heteroscedastic data, use _weighted_bic() which accounts for
+    per-point flux uncertainties via a proper chi-squared log-likelihood.
+    """
     n = len(residuals)
     rss = np.sum(residuals ** 2)
     sigma2 = rss / n
@@ -494,12 +501,39 @@ def _bic(residuals: np.ndarray, n_params: int) -> float:
     return -2 * log_likelihood + n_params * np.log(n)
 
 
+def _weighted_bic(
+    residuals: np.ndarray,
+    flux_err: np.ndarray,
+    n_params: int,
+) -> float:
+    """Weighted BIC using per-point uncertainties (IMPROVE-04).
+
+    log L = -½ Σ [(r_i/σ_i)² + ln(2π σ_i²)]
+    BIC   = -2 ln L + k ln N
+
+    More accurate than ``_bic`` when ``flux_err`` varies across points.
+    Falls back to ``_bic`` if ``flux_err`` is all-NaN or zero-length.
+    """
+    if flux_err is None or len(flux_err) == 0 or not np.any(np.isfinite(flux_err)):
+        return _bic(residuals, n_params)
+    n = len(residuals)
+    pos = flux_err[flux_err > 0]
+    fallback = float(np.nanmedian(pos)) if len(pos) > 0 else 1e-6
+    sigma = np.where(flux_err > 0, flux_err, fallback)
+    sigma = np.where(sigma > 0, sigma, 1e-6)
+    chi2_terms = (residuals / sigma) ** 2
+    log_likelihood = -0.5 * (np.sum(chi2_terms) + np.sum(np.log(2 * np.pi * sigma ** 2)))
+    return -2 * log_likelihood + n_params * np.log(n)
+
+
+
 def test_transit_shape(
     phase: np.ndarray,
     flux: np.ndarray,
     duration: float,
     period: float,
     primary_depth_ppm: float,
+    flux_err: Optional[np.ndarray] = None,
 ) -> Dict:
     """
     Test 5: Fit a trapezoid vs V-shape model; compare BIC.
@@ -548,7 +582,8 @@ def test_transit_shape(
             p0=p0_trap, bounds=bounds_trap, maxfev=5000,
         )
         resid_trap = fl_w - _trapezoid_model(ph_w, *popt_trap)
-        bic_trap = _bic(resid_trap, n_params=4)
+        fe_w = flux_err[mask] if flux_err is not None else None
+        bic_trap = _weighted_bic(resid_trap, fe_w, n_params=4)
     except Exception as e:
         logger.warning("Trapezoid fit failed: %s", e)
         bic_trap = np.inf
@@ -562,7 +597,8 @@ def test_transit_shape(
             p0=p0_v, bounds=bounds_v, maxfev=5000,
         )
         resid_v = fl_w - _v_shape_model(ph_w, *popt_v)
-        bic_v = _bic(resid_v, n_params=3)
+        fe_w = flux_err[mask] if flux_err is not None else None
+        bic_v = _weighted_bic(resid_v, fe_w, n_params=3)
     except Exception as e:
         logger.warning("V-shape fit failed: %s", e)
         bic_v = np.inf
@@ -793,6 +829,7 @@ def run_vetting(
     sort_idx = np.argsort(phase)
     phase_s = phase[sort_idx]
     flux_s = flux[sort_idx]
+    flux_err_s = flux_err[sort_idx]
 
     test_results = {}
 
@@ -813,7 +850,7 @@ def run_vetting(
     )
 
     # Test 5
-    test_results["shape"] = test_transit_shape(phase_s, flux_s, duration, period, depth_ppm)
+    test_results["shape"] = test_transit_shape(phase_s, flux_s, duration, period, depth_ppm, flux_err_s)
 
     summary = vetting_verdict(test_results)
 
