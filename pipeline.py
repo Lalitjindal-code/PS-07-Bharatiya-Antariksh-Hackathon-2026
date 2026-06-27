@@ -83,7 +83,7 @@ def run_pipeline(
         time=time, flux=flux,
         period_max_days=baseline / 3.0,
         cadence_minutes=cadence_min,
-        method="savgol",
+        method="wotan",         # Wotan biweight: more robust and transit-depth-preserving
         target_id=target_id,
         save_plot=save_plots,
         period_min_days=_period_min,   # IMPROVE-05: window vs period check
