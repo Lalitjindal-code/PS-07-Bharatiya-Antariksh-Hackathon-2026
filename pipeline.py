@@ -207,7 +207,8 @@ def run_pipeline(
         period_d ** 2 / max(_baseline * _n_periods, 1e-6),
         1e-6, period_d / 100.0
     ))
-    _rp_rs = float(fit_params.get("rp_val", np.sqrt(max(depth_ppm / 1e6, 0))))
+    rp_val = fit_params.get("rp_val")
+    _rp_rs = float(rp_val) if rp_val is not None else float(np.sqrt(max(depth_ppm / 1e6, 0)))
     _planet_r_earth = round(_rp_rs * star_radius_rsun * 109.076, 3)
     _n_transits = int(max(_baseline / period_d, 1)) if period_d > 0 else 1
 
@@ -239,6 +240,9 @@ def run_pipeline(
         "classification":            clf_result["classification"],
         "classification_confidence": round(clf_result["classification_confidence"], 4),
         "class_probabilities":       {k: round(v, 4) for k, v in clf_result["class_probabilities"].items()},
+        "cnn_classification":         clf_result.get("cnn_classification", "N/A"),
+        "cnn_confidence":             round(clf_result.get("cnn_confidence", 0.0), 4) if "cnn_confidence" in clf_result else "N/A",
+        "cnn_class_probabilities":    {k: round(v, 4) for k, v in clf_result.get("cnn_class_probabilities", {}).items()} if "cnn_class_probabilities" in clf_result else {},
         "pipeline_wall_time_s":      round(_time_mod.time() - t_pipeline_start, 1),
     }
 

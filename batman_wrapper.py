@@ -30,7 +30,7 @@ from __future__ import annotations
 import warnings
 import logging
 import numpy as np
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -205,10 +205,9 @@ class TransitParams:
     ``PurePythonTransitModel``.
     """
     def __init__(self):
+        self._params: Optional[Any] = None
         if BATMAN_AVAILABLE:
             self._params = batman.TransitParams()
-        else:
-            self._params = None
         # Default values (will be overwritten by caller)
         self.t0 = 0.0
         self.per = 1.0

@@ -160,7 +160,7 @@ def compute_snr(
         "n_in_transit": n_in,
         "n_out_transit": int(oot_flux.size),
         "sigma_oot": sigma_oot,
-        "depth_used": float(depth),
+        "depth_used": depth,
         "noise_on_transit": noise_on_transit,
     }
 
@@ -312,7 +312,7 @@ def compute_fap_bootstrap(
             elapsed = _time_module.time() - t_start
             logger.info("  … %d / %d trials done (%.1f s)", i + 1, n_trials, elapsed)
 
-    elapsed_s = float(_time_module.time() - t_start)
+    elapsed_s = _time_module.time() - t_start
     trial_powers_arr = np.array(trial_powers, dtype=float)
     valid = trial_powers_arr[np.isfinite(trial_powers_arr)]
 
@@ -398,7 +398,7 @@ def run_significance(
     target_id: str = "target",
     save_plot: bool = True,
     skip_fap: bool = False,
-    fit_depth_ppm: float = None,
+    fit_depth_ppm: Optional[float] = None,
 ) -> Dict:
     """
     Run Phase 8 (statistical significance) and return a combined result dict.
@@ -425,7 +425,7 @@ def run_significance(
     duration = float(best_signal["duration"])
     # Use fitted depth if provided (more accurate than BLS box depth).
     if fit_depth_ppm is not None and np.isfinite(fit_depth_ppm):
-        depth = float(fit_depth_ppm) / 1e6
+        depth = fit_depth_ppm / 1e6
     else:
         depth = float(best_signal["depth"])
     real_power = float(best_signal.get("power", np.nan))

@@ -186,11 +186,11 @@ def test_odd_even(
 
     # Score: use Part B6 primary criterion |delta|/sigma_delta > 3
     if depth_diff_sigma < 3.0:
-        score, verdict = +1, "PASS — odd/even depths consistent (planet-like, |Δ|/σ=%.2f<3)" % depth_diff_sigma
+        score, verdict = +1, "PASS - odd/even depths consistent (planet-like, |delta|/sigma=%.2f<3)" % depth_diff_sigma
     elif depth_diff_sigma >= 3.0:
-        score, verdict = -1, "FAIL — significant odd/even depth asymmetry (EB-like, |Δ|/σ=%.2f≥3)" % depth_diff_sigma
+        score, verdict = -1, "FAIL - significant odd/even depth asymmetry (EB-like, |delta|/sigma=%.2f>=3)" % depth_diff_sigma
     else:
-        score, verdict = 0, "INCONCLUSIVE — mild asymmetry (|Δ|/σ=%.2f)" % depth_diff_sigma
+        score, verdict = 0, "INCONCLUSIVE - mild asymmetry (|delta|/sigma=%.2f)" % depth_diff_sigma
 
     logger.info(
         "Odd-even test (Part B6): odd=%.1f ppm, even=%.1f ppm, "
@@ -503,7 +503,7 @@ def _bic(residuals: np.ndarray, n_params: int) -> float:
 
 def _weighted_bic(
     residuals: np.ndarray,
-    flux_err: np.ndarray,
+    flux_err: Optional[np.ndarray],
     n_params: int,
 ) -> float:
     """Weighted BIC using per-point uncertainties (IMPROVE-04).

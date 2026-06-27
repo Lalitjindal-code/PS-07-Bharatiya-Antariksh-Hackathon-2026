@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 import joblib
 import numpy as np
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 MODELS_DIR = Path(__file__).parent / "models"
 CLF_PATH   = MODELS_DIR / "rf_classifier.joblib"
 IMP_PATH   = MODELS_DIR / "imputer.joblib"
+CNN_PATH   = MODELS_DIR / "cnn_classifier.pt"
 
 # Feature order MUST match what the model was trained on (train_classifier.py)
 FEATURE_NAMES = [
@@ -123,6 +124,23 @@ def classify_candidate(
     }
 
 
+def load_cnn_classifier() -> Optional[Any]:
+    """Load CNN classifier if available."""
+    if not CNN_PATH.exists():
+        return None
+    try:
+        import torch
+        from train_cnn import DualViewCNN
+        model = DualViewCNN()
+        model.load_state_dict(torch.load(CNN_PATH, map_location=torch.device('cpu')))
+        model.eval()
+        logger.info("Loaded CNN classifier from %s", CNN_PATH)
+        return model
+    except Exception as e:
+        logger.warning("Failed to load CNN classifier: %s", e)
+        return None
+
+
 def classify_from_pipeline_outputs(
     best_signal: dict,
     fit_params: dict,
@@ -173,4 +191,48 @@ def classify_from_pipeline_outputs(
     result["features_used"] = {
         name: float(val) for name, val in zip(FEATURE_NAMES, fvec[0])
     }
+
+    # --- CNN Classification Integration ---
+    cnn_model = load_cnn_classifier()
+    if cnn_model is not None:
+        phase_f = best_signal.get("phase", None)
+        flux_f = best_signal.get("flux_folded", None)
+        if phase_f is not None and flux_f is not None:
+            try:
+                import torch
+                # Interpolate to uniform global bins (2001 bins from -0.5 to +0.5)
+                global_grid = np.linspace(-0.5, 0.5, 2001)
+                global_view = np.interp(global_grid, phase_f, flux_f)
+                
+                # Interpolate to uniform local bins (201 bins from -0.15 to +0.15)
+                local_grid = np.linspace(-0.15, 0.15, 201)
+                local_view = np.interp(local_grid, phase_f, flux_f)
+                
+                # Form Torch tensors
+                g_tensor = torch.tensor(global_view, dtype=torch.float32).unsqueeze(0) # (1, 2001)
+                l_tensor = torch.tensor(local_view, dtype=torch.float32).unsqueeze(0) # (1, 201)
+                
+                # Scalars: depth, duration, period, snr, impact
+                _imp = impact_b if (np.isfinite(impact_b) and not np.isnan(impact_b)) else 0.0
+                _snr = snr if (np.isfinite(snr) and not np.isnan(snr)) else 5.0
+                s_tensor = torch.tensor([[depth_ppm, duration_h, period_d, _snr, _imp]], dtype=torch.float32)
+                
+                with torch.no_grad():
+                    logits = cnn_model(g_tensor, l_tensor, s_tensor)
+                    probs = torch.softmax(logits, dim=1).numpy()[0]
+                    
+                label_map = ["PC", "AFP", "NTP"]
+                cnn_classes = {"PC": "planet_candidate", "AFP": "eclipsing_binary_or_false_positive", "NTP": "noise"}
+                
+                best_idx = np.argmax(probs)
+                best_class = label_map[best_idx]
+                
+                result["cnn_classification"] = cnn_classes.get(best_class, best_class)
+                result["cnn_confidence"] = float(probs[best_idx])
+                result["cnn_class_probabilities"] = {
+                    cnn_classes.get(label_map[i]): float(p) for i, p in enumerate(probs)
+                }
+            except Exception as e:
+                logger.warning("CNN inference failed: %s", e)
+
     return result
