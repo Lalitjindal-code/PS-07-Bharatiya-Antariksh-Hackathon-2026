@@ -46,6 +46,8 @@ def run_pipeline(
     bin_cadence_min: float = 30.0,
     save_plots: bool = True,
     rng_seed: int = 42,
+    progress_cb = None,
+    return_plot_data: bool = False,
 ) -> dict:
     """
     Run the full pipeline on one target and return a structured result dict.
@@ -59,6 +61,7 @@ def run_pipeline(
     # Phase 2-3: Data acquisition + preprocessing
     # -------------------------------------------------------------------
     logger.info("[Phase 2-3] Downloading and preprocessing %s …", target_id)
+    if progress_cb: progress_cb(f"Downloading & Preprocessing: {target_id}...")
     from data_loader import download_lightcurve, preprocess
     lc = download_lightcurve(target_id, mission=mission)
     time, flux, flux_err = preprocess(lc)
@@ -72,6 +75,7 @@ def run_pipeline(
     # Phase 4: Detrending
     # -------------------------------------------------------------------
     logger.info("[Phase 4] Detrending …")
+    if progress_cb: progress_cb("Detrending light curve...")
     from detrend import run_detrending
     _cadence_days = cadence_min / 1440.0
     _period_min   = max(0.5, 3.0 * _cadence_days)   # IMPROVE-02/05 floor
@@ -90,6 +94,7 @@ def run_pipeline(
     # Phase 5: Period search (BLS)
     # -------------------------------------------------------------------
     logger.info("[Phase 5] BLS period search …")
+    if progress_cb: progress_cb("Running BLS period search...")
     from identify import (
         build_period_grid, build_duration_grid,
         run_bls, bin_lc_for_bls, phase_fold,
@@ -126,6 +131,7 @@ def run_pipeline(
     # Phase 6: Characterization (batman + lmfit)
     # -------------------------------------------------------------------
     logger.info("[Phase 6] Transit model fit …")
+    if progress_cb: progress_cb("Fitting transit model...")
     from characterize import run_characterization
     fit_params, _ = run_characterization(
         time=time, flux=detrended, flux_err=flux_err,
@@ -136,6 +142,7 @@ def run_pipeline(
     # Phase 7: Vetting
     # -------------------------------------------------------------------
     logger.info("[Phase 7] Vetting …")
+    if progress_cb: progress_cb("Running vetting tests...")
     from vet import run_vetting
     vet_tests, vet_summary = run_vetting(
         time=time, flux=detrended, flux_err=flux_err,
@@ -150,6 +157,7 @@ def run_pipeline(
     # Phase 8: Statistical significance
     # -------------------------------------------------------------------
     logger.info("[Phase 8] Significance …")
+    if progress_cb: progress_cb("Calculating significance & FAP...")
     from significance import run_significance
     # Pass fitted depth (more accurate than BLS box estimate) for SNR calculation
     fit_depth_ppm = fit_params.get("depth_ppm_val", None)
@@ -166,6 +174,7 @@ def run_pipeline(
     # Phase 9-10: Feature engineering + classification
     # -------------------------------------------------------------------
     logger.info("[Phase 9-10] Classification …")
+    if progress_cb: progress_cb("Classifying target...")
     from classify import classify_from_pipeline_outputs
     clf_result = classify_from_pipeline_outputs(
         best_signal=best_signal,
@@ -250,6 +259,18 @@ def run_pipeline(
             "recovered_duration_h":  round(duration_h, 4),
             "duration_error_pct":    round(err_dur, 2),
         }
+
+    if return_plot_data:
+        result["plot_data"] = {
+            "phase": best_signal.get("phase", []).tolist() if isinstance(best_signal.get("phase"), np.ndarray) else [],
+            "flux_folded": best_signal.get("flux_folded", []).tolist() if isinstance(best_signal.get("flux_folded"), np.ndarray) else [],
+            "model_phase": fit_params.get("model_phase", []).tolist() if isinstance(fit_params.get("model_phase"), np.ndarray) else [],
+            "model_flux": fit_params.get("model_flux", []).tolist() if isinstance(fit_params.get("model_flux"), np.ndarray) else [],
+            "phase_b": fit_params.get("phase_b", []).tolist() if isinstance(fit_params.get("phase_b"), np.ndarray) else [],
+            "flux_b": fit_params.get("flux_b", []).tolist() if isinstance(fit_params.get("flux_b"), np.ndarray) else [],
+        }
+
+    if progress_cb: progress_cb("Done!")
 
     return result
 

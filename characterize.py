@@ -798,6 +798,11 @@ def run_characterization(
             save_path=PLOTS_DIR / f"{tag}_transit_model.png",
         )
 
+    fit_params["model_phase"] = model_phase
+    fit_params["model_flux"] = model_flux
+    fit_params["phase_b"] = phase_b
+    fit_params["flux_b"] = flux_b
+
     comparison = report_fit_vs_known(fit_params, target_id)
     return fit_params, comparison
 
