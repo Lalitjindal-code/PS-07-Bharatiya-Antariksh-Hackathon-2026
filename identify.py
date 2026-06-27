@@ -694,6 +694,32 @@ def run_identification(
     best_signal["phase"] = phase
     best_signal["flux_folded"] = flux_folded
 
+    # -----------------------------------------------------------------------
+    # Empirical depth: measure directly from phase-folded data.
+    # This is far more accurate than the BLS box-model depth, especially for
+    # shallow transits (< 500 ppm) where BLS systematically underestimates.
+    # In-transit window = |phase| < 0.5 * (duration / period)
+    # -----------------------------------------------------------------------
+    half_phase = 0.5 * best_signal["duration"] / best_signal["period"]
+    in_transit  = np.abs(phase) < half_phase
+    out_transit = np.abs(phase) > 2.0 * half_phase
+    if in_transit.sum() >= 3 and out_transit.sum() >= 10:
+        oot_median  = float(np.median(flux_folded[out_transit]))
+        it_median   = float(np.median(flux_folded[in_transit]))
+        empirical_depth_ppm = max((oot_median - it_median) * 1e6, 0.0)
+        best_signal["empirical_depth_ppm"] = empirical_depth_ppm
+        logger.info(
+            "Empirical depth from phase-fold: %.1f ppm  "
+            "(BLS box depth: %.1f ppm)",
+            empirical_depth_ppm, best_depth * 1e6,
+        )
+    else:
+        best_signal["empirical_depth_ppm"] = best_depth * 1e6
+        logger.warning(
+            "Too few in-transit points (%d) for empirical depth — using BLS depth.",
+            int(in_transit.sum()),
+        )
+
     if save_plots:
         tag = target_id.replace(" ", "_")
         plot_periodogram(

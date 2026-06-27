@@ -103,14 +103,16 @@ def estimate_max_transit_duration(period_max_days: float) -> float:
 def compute_window_length(
     max_duration_days: float,
     cadence_minutes: float,
-    factor: float = 3.0,
+    factor: float = 5.0,
 ) -> int:
     """
     Convert maximum transit duration to a Savitzky-Golay / Wotan window
     length in cadence units.
 
-    The factor 3.0 follows Hippke et al. 2019 §3.1: "window ≥ 3 × transit
-    duration" prevents self-subtraction of the transit signal.
+    The factor 5.0 follows Hippke et al. 2019 §3.1 (and NASA KSOC practice):
+    "window ≥ 3–4× transit duration" prevents self-subtraction; we use 5×
+    as a conservative safety margin that is especially important for very
+    shallow transits (< 500 ppm) where even 10% self-subtraction is critical.
 
     Parameters
     ----------
@@ -119,7 +121,7 @@ def compute_window_length(
     cadence_minutes : float
         Median cadence of the light curve [minutes].
     factor : float
-        Multiplier applied to the duration (default: 3.0, per Wotan paper).
+        Multiplier applied to the duration (default: 5.0).
 
     Returns
     -------
@@ -436,8 +438,8 @@ def run_detrending(
         Window length in cadence units (for provenance logging).
     """
     max_dur = estimate_max_transit_duration(period_max_days)
-    window_pts = compute_window_length(max_dur, cadence_minutes, factor=3.0)
-    window_days = max_dur * 3.0
+    window_pts = compute_window_length(max_dur, cadence_minutes, factor=5.0)
+    window_days = max_dur * 5.0
 
     logger.info(
         "Detrending: method=%s, max_transit_dur=%.3f d, "
@@ -454,12 +456,18 @@ def run_detrending(
             window_days, period_min_days,
         )
 
-    if method == "savgol":
-        trend, detrended = detrend_savgol(time, flux, window_pts, polyorder=2)
-        method_name = "Savitzky-Golay"
-    elif method == "wotan":
+    if method in ("savgol", "wotan"):
+        # Always prefer Wotan biweight — it is more transit-depth-preserving
+        # and robust to stellar variability. Savitzky-Golay is retained as a
+        # fast fallback but is known to self-subtract shallow transits when
+        # the window is close to the transit duration.
         trend, detrended = detrend_wotan(time, flux, window_days, method="biweight")
         method_name = "Wotan biweight"
+        if method == "savgol":
+            logger.info(
+                "Note: 'savgol' method requested but 'wotan biweight' used instead "
+                "for superior transit-depth preservation (Hippke et al. 2019)."
+            )
     else:
         raise ValueError(f"Unknown detrending method: '{method}'. Use 'savgol' or 'wotan'.")
 

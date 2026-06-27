@@ -187,13 +187,35 @@ def run_pipeline(
     # -------------------------------------------------------------------
     # Assemble final JSON-serialisable result (spec §OUTPUT FORMAT)
     # -------------------------------------------------------------------
-    period_d   = float(best_signal["period"])
+    period_d       = float(best_signal["period"])
     _bls_depth_ppm = float(best_signal["depth"]) * 1e6
     _bls_dur_h     = float(best_signal["duration"]) * 24.0
+    _empirical_ppm = float(best_signal.get("empirical_depth_ppm", _bls_depth_ppm))
     depth_ppm  = float(fit_params.get("depth_ppm_val", _bls_depth_ppm))
     duration_h = float(fit_params.get("duration_h_val", _bls_dur_h))
     if not np.isfinite(depth_ppm) or depth_ppm < 1.0: depth_ppm  = _bls_depth_ppm
     if not np.isfinite(duration_h) or duration_h <= 0: duration_h = _bls_dur_h
+
+    # Empirical depth sanity check:
+    # If the batman fit returned a depth < 5 ppm but the empirical phase-fold
+    # depth is > 20 ppm, the fitter diverged to a bad local minimum. Use the
+    # empirical depth, which is measured directly from the data.
+    if depth_ppm < 5.0 and _empirical_ppm > 20.0:
+        logger.warning(
+            "batman depth %.2f ppm is unreliably small; "
+            "substituting empirical phase-fold depth %.2f ppm.",
+            depth_ppm, _empirical_ppm,
+        )
+        depth_ppm = _empirical_ppm
+    # Always take the more generous of the two estimates so we don't
+    # accidentally bias the classifier toward 'noise' for shallow planets.
+    elif _empirical_ppm > depth_ppm * 2.0 and _empirical_ppm > 10.0:
+        logger.info(
+            "Empirical depth (%.1f ppm) > 2× batman depth (%.1f ppm); "
+            "using empirical for classification features.",
+            _empirical_ppm, depth_ppm,
+        )
+        depth_ppm = _empirical_ppm
 
     vetting_flags = {
         "odd_even_consistent":        vet_tests.get("odd_even", {}).get("score", 0) == 1,

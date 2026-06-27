@@ -166,14 +166,28 @@ def classify_from_pipeline_outputs(
     a_rs       = float(fit_params.get("a_rs_val", np.nan))
     inc_deg    = float(fit_params.get("inc_val", 90.0))
 
-    # Use refined fit values for depth and duration (more accurate than raw BLS)
-    fit_depth_ppm = float(fit_params.get("depth_ppm_val", np.nan))
-    fit_dur_h     = float(fit_params.get("duration_h_val", np.nan))
-    depth_ppm  = fit_depth_ppm if np.isfinite(fit_depth_ppm) else float(best_signal.get("depth", 0.0)) * 1e6
-    duration_h = fit_dur_h    if np.isfinite(fit_dur_h)     else float(best_signal.get("duration", 0.0)) * 24.0
+    # Use the best available depth in this priority order:
+    # 1. empirical phase-fold depth (most accurate for shallow transits)
+    # 2. batman model fit depth
+    # 3. raw BLS box depth
+    empirical_ppm  = float(best_signal.get("empirical_depth_ppm", 0.0))
+    fit_depth_ppm  = float(fit_params.get("depth_ppm_val", np.nan))
+    bls_depth_ppm  = float(best_signal.get("depth", 0.0)) * 1e6
+    fit_dur_h      = float(fit_params.get("duration_h_val", np.nan))
 
-    period_d    = float(best_signal.get("period", 0.0))
-    snr         = float(snr_result.get("snr", np.nan))
+    # Pick best depth: empirical > batman if empirical is substantially larger
+    if empirical_ppm > 10.0 and (not np.isfinite(fit_depth_ppm) or fit_depth_ppm < 5.0 or empirical_ppm > fit_depth_ppm * 1.5):
+        depth_ppm = empirical_ppm
+        logger.info("Using empirical depth %.1f ppm for classification (batman=%.1f ppm).",
+                    empirical_ppm, fit_depth_ppm if np.isfinite(fit_depth_ppm) else 0.0)
+    elif np.isfinite(fit_depth_ppm) and fit_depth_ppm >= 1.0:
+        depth_ppm = fit_depth_ppm
+    else:
+        depth_ppm = max(bls_depth_ppm, empirical_ppm)
+
+    duration_h = fit_dur_h if np.isfinite(fit_dur_h) and fit_dur_h > 0 else float(best_signal.get("duration", 0.0)) * 24.0
+    period_d   = float(best_signal.get("period", 0.0))
+    snr        = float(snr_result.get("snr", np.nan))
 
     # Real orbital impact parameter b = (a/Rs) * cos(inc)
     impact_b = a_rs * np.cos(np.radians(inc_deg)) if np.isfinite(a_rs) and np.isfinite(inc_deg) else np.nan
@@ -188,9 +202,44 @@ def classify_from_pipeline_outputs(
         depth_ppm, duration_h, period_d, snr, odd_even_stat, impact_b, prad_earth
     )
     result = classify_candidate(fvec, clf=clf, imp=imp)
+
+    # -----------------------------------------------------------------------
+    # Vetting-score probability adjustment
+    # If the classical vetting tests strongly favour a planet (all 3 pass),
+    # apply a small boost to the PC probability to correct for RF bias.
+    # Conversely, penalise PC if vetting score is very negative.
+    # This keeps the ML result primary while incorporating physical evidence.
+    # -----------------------------------------------------------------------
+    vet_score = 0
+    for test_key in ["odd_even", "secondary", "centroid"]:
+        vet_score += vet_results.get(test_key, {}).get("score", 0)
+
+    probs = result["class_probabilities"]
+    if vet_score >= 2 and "PC" in probs and "AFP" in probs:
+        # Strong vetting pass: shift 10% from AFP toward PC
+        boost = min(0.10, probs.get("AFP", 0.0))
+        probs["PC"]  = min(1.0, probs.get("PC", 0.0)  + boost)
+        probs["AFP"] = max(0.0, probs.get("AFP", 0.0) - boost)
+        logger.info("Vetting boost (+%.0f%% PC): all vetting tests passed.", boost * 100)
+    elif vet_score <= -2 and "AFP" in probs and "PC" in probs:
+        # Strong vetting fail: shift 10% from PC toward AFP
+        penalty = min(0.10, probs.get("PC", 0.0))
+        probs["AFP"] = min(1.0, probs.get("AFP", 0.0) + penalty)
+        probs["PC"]  = max(0.0, probs.get("PC", 0.0)  - penalty)
+        logger.info("Vetting penalty (-%.0f%% PC): vetting tests failed.", penalty * 100)
+
+    # Re-determine top class after adjustment
+    if probs:
+        top_raw = max(probs, key=lambda k: probs[k])
+        result["classification"] = LABEL_MAP.get(top_raw, top_raw)
+        result["classification_confidence"] = float(probs[top_raw])
+        result["class_probabilities"] = probs
+
     result["features_used"] = {
         name: float(val) for name, val in zip(FEATURE_NAMES, fvec[0])
     }
+    result["features_used"]["empirical_depth_ppm"] = empirical_ppm
+
 
     # --- CNN Classification Integration ---
     cnn_model = load_cnn_classifier()
