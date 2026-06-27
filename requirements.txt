@@ -42,6 +42,7 @@ pandas==2.2.3
 
 # --- Visualization ---
 matplotlib==3.9.2
+plotly==5.24.1
 
 # --- Demo ---
 streamlit==1.38.0

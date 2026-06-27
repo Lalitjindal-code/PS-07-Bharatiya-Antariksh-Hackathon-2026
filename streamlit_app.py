@@ -16,6 +16,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
+import plotly.graph_objects as go
+
+if "history" not in st.session_state:
+    st.session_state["history"] = []
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -166,23 +170,38 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
-    target_id = st.text_input("Target ID", value="KIC 11904151",
-                               help="KIC, TIC, or Kepler ID — e.g. KIC 11904151 (Kepler-10)")
+    
+    target_options = ["KIC 11904151", "KIC 3733346", "Custom"]
+    selected_target = st.selectbox("Target Selection", target_options)
+    
+    if selected_target == "Custom":
+        target_id = st.text_input("Custom Target ID", value="KIC 11904151", help="KIC, TIC, or Kepler ID")
+    else:
+        target_id = selected_target
+
     mission   = st.selectbox("Mission", ["Kepler", "K2", "TESS"])
 
-    st.divider()
-    st.markdown("### Stellar Parameters")
-    star_r = st.number_input("Stellar Radius [R☉]", value=1.0, step=0.01)
-    star_m = st.number_input("Stellar Mass [M☉]",   value=1.0, step=0.01)
-
-    st.divider()
-    st.markdown("### Analysis Options")
-    skip_fap   = st.checkbox("Skip bootstrap FAP (faster)", value=True)
-    n_fap      = st.slider("FAP bootstrap trials", 100, 1000, 200, 100, disabled=skip_fap)
-    save_plots = st.checkbox("Save plots to disk", value=True)
+    with st.expander("⚙️ Advanced Settings"):
+        st.markdown("### Stellar Parameters")
+        star_r = st.number_input("Stellar Radius [R☉]", value=1.0, step=0.01)
+        star_m = st.number_input("Stellar Mass [M☉]",   value=1.0, step=0.01)
+        
+        st.divider()
+        st.markdown("### Analysis Options")
+        skip_fap   = st.checkbox("Skip bootstrap FAP (faster)", value=True)
+        n_fap      = st.slider("FAP bootstrap trials", 100, 1000, 200, 100, disabled=skip_fap)
+        save_plots = st.checkbox("Save plots to disk", value=True)
 
     st.divider()
     run_btn = st.button("🚀 Run Pipeline", type="primary")
+
+    if st.session_state["history"]:
+        st.divider()
+        st.markdown("### 🕒 Recent Runs")
+        for hist_item in reversed(st.session_state["history"]):
+            if st.button(f"Load {hist_item['target_id']}", key=f"hist_{hist_item['target_id']}"):
+                st.session_state["result"] = hist_item["result"]
+                st.session_state["target_id"] = hist_item["target_id"]
 
 # ---------------------------------------------------------------------------
 # Quick-reference known planets
@@ -203,10 +222,14 @@ with st.expander("📚 Quick-reference: Known planet targets"):
 # Run pipeline
 # ---------------------------------------------------------------------------
 if run_btn:
-    with st.spinner("Running pipeline — this may take a few minutes …"):
+    with st.status("Running pipeline...", expanded=True) as status:
         try:
             sys.path.insert(0, str(Path(__file__).parent))
             from pipeline import run_pipeline
+            
+            def progress_cb(msg):
+                status.update(label=msg)
+                
             result = run_pipeline(
                 target_id        = target_id.strip(),
                 mission          = mission,
@@ -216,10 +239,19 @@ if run_btn:
                 star_mass_msun   = star_m,
                 save_plots       = save_plots,
                 rng_seed         = 42,
+                progress_cb      = progress_cb,
+                return_plot_data = True,
             )
             st.session_state["result"]    = result
             st.session_state["target_id"] = target_id.strip()
+            
+            # Add to history if not exists
+            if not any(h["target_id"] == target_id.strip() for h in st.session_state["history"]):
+                st.session_state["history"].append({"target_id": target_id.strip(), "result": result})
+                
+            status.update(label="Analysis Complete!", state="complete", expanded=False)
         except Exception as exc:
+            status.update(label=f"Pipeline error: {exc}", state="error")
             st.error(f"Pipeline error: {exc}")
             st.exception(exc)
             st.stop()
@@ -412,6 +444,26 @@ if result:
                 delta=f"{err:.1f}% vs published",
             )
 
+    # --- Planet Size Visualizer ---
+    if _rp_earth:
+        st.markdown("### 🪐 Planet Size Comparison")
+        scale = min(max(float(_rp_earth), 0.2), 15.0) # Cap visually between Mars and a large Jupiter
+        earth_px = 30
+        planet_px = int(earth_px * scale)
+        
+        st.markdown(f"""
+        <div style="display:flex;align-items:flex-end;gap:40px;margin:2rem 0;padding:2rem;background:rgba(30,41,59,0.3);border-radius:16px;border:1px solid rgba(255,255,255,0.05);justify-content:center">
+            <div style="text-align:center">
+                <div style="width:{earth_px}px;height:{earth_px}px;border-radius:50%;background:radial-gradient(circle at 30% 30%, #60a5fa, #2563eb);margin:0 auto 1rem auto;box-shadow:inset -5px -5px 10px rgba(0,0,0,0.5), 0 0 15px rgba(37,99,235,0.4)"></div>
+                <div style="color:#94a3b8;font-size:0.9rem;font-weight:600">Earth (1 R⊕)</div>
+            </div>
+            <div style="text-align:center">
+                <div style="width:{planet_px}px;height:{planet_px}px;border-radius:50%;background:radial-gradient(circle at 30% 30%, #fcd34d, #d97706);margin:0 auto 1rem auto;box-shadow:inset -10px -10px 20px rgba(0,0,0,0.5), 0 0 25px rgba(217,119,6,0.3)"></div>
+                <div style="color:#f8fafc;font-size:1.1rem;font-weight:700">Detected ({float(_rp_earth):.2f} R⊕)</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # --- Plots ---
     PLOTS_DIR = Path(__file__).parent / "plots"
     tag = result.get("target_id", "target").replace(" ", "_")
@@ -425,20 +477,70 @@ if result:
     }
 
     available = {k: v for k, v in plot_files.items() if v.exists()}
-    if available:
+    if available or "plot_data" in result:
         st.markdown("### 📈 Plots")
-        names = list(available.keys())
+        
+        names = []
+        if "plot_data" in result and result["plot_data"].get("phase"):
+            names.append("Interactive Phase-Fold")
+        names.extend(list(available.keys()))
+        
         tab_objects = st.tabs(names)
         for tab, name in zip(tab_objects, names):
             with tab:
-                st.image(str(available[name]), use_column_width=True)
+                if name == "Interactive Phase-Fold":
+                    pd_data = result["plot_data"]
+                    fig = go.Figure()
+                    
+                    if pd_data.get("phase"):
+                        max_pts = 5000
+                        n_pts = len(pd_data["phase"])
+                        stride = max(1, n_pts // max_pts)
+                        
+                        fig.add_trace(go.Scattergl(
+                            x=pd_data["phase"][::stride], 
+                            y=pd_data["flux_folded"][::stride],
+                            mode="markers", marker=dict(size=3, color="rgba(148,163,184,0.3)"),
+                            name=f"Unbinned Data (subsampled)" if stride > 1 else "Unbinned Data"
+                        ))
+                    
+                    if pd_data.get("phase_b"):
+                        fig.add_trace(go.Scattergl(
+                            x=pd_data["phase_b"], y=pd_data["flux_b"],
+                            mode="markers", marker=dict(size=6, color="#f8fafc", line=dict(width=1, color="#334155")),
+                            name="Binned Data"
+                        ))
+                        
+                    if pd_data.get("model_phase"):
+                        fig.add_trace(go.Scattergl(
+                            x=pd_data["model_phase"], y=pd_data["model_flux"],
+                            mode="lines", line=dict(color="#38bdf8", width=3),
+                            name="Transit Model"
+                        ))
+                        
+                    fig.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        xaxis_title="Phase",
+                        yaxis_title="Normalized Flux",
+                        hovermode="x unified",
+                        height=500,
+                        margin=dict(l=40, r=40, t=40, b=40)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.image(str(available[name]), use_column_width=True)
 
     # --- Raw JSON ---
+    # Filter out plot_data to prevent massive JSON payloads which cause UI lag
+    disp_result = {k: v for k, v in result.items() if k != "plot_data"}
+    
     with st.expander("📄 Raw JSON result"):
-        st.json(result)
+        st.json(disp_result)
 
     # --- Download button ---
-    json_str = json.dumps(result, indent=2, default=str)
+    json_str = json.dumps(disp_result, indent=2, default=str)
     st.download_button(
         "⬇️  Download result JSON",
         data=json_str,
