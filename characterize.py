@@ -538,48 +538,54 @@ def report_fit_vs_known(
     depth_err_pct = abs(depth_rec - known["depth_ppm"]) / known["depth_ppm"] * 100
     dur_err_pct = abs(dur_rec - known["duration_hours"]) / known["duration_hours"] * 100
 
-    print("\n" + "=" * 65)
-    print("  CHARACTERIZATION vs. NASA EXOPLANET ARCHIVE")
-    print(f"  Target: {target_id}")
-    print(f"  batman C extension: {'YES' if BATMAN_AVAILABLE else 'NO (pure-Python fallback)'}")
-    print("=" * 65)
+    sep = "=" * 65
     depth_err_str = f"{depth_err:.1f}" if not np.isnan(depth_err) else "NaN"
-    print(f"  Depth (ppm)  : fit={depth_rec:.1f}±{depth_err_str}  |  known={known['depth_ppm']:.1f}  "
-          f"|  error={depth_err_pct:.1f}%")
-    print(f"  Duration (h) : fit={dur_rec:.3f}  |  known={known['duration_hours']:.3f}  "
-          f"|  error={dur_err_pct:.1f}%")
-    print(f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- {fit_params['rp_err']:.5f}"
-          if not np.isnan(fit_params["rp_err"])
-          else f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- NaN (covariance unavailable)")
-    print(f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- {fit_params['a_rs_err']:.3f}"
-          if not np.isnan(fit_params["a_rs_err"])
-          else f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- NaN")
-    print(f"  Inclination  : {fit_params['inc_val']:.3f} +/- {fit_params['inc_err']:.4f} deg"
-          if not np.isnan(fit_params["inc_err"])
-          else f"  Inclination  : {fit_params['inc_val']:.3f} +/- NaN deg")
-    print(f"  Baseline     : {fit_params['baseline_val']:.6f} +/- {fit_params['baseline_err']:.2e}"
-          if not np.isnan(fit_params["baseline_err"])
-          else f"  Baseline     : {fit_params['baseline_val']:.6f} +/- NaN")
-    print(f"  chi^2 reduced : {fit_params['redchi']:.4f}  "
-          f"(ideal ~ 1.0; >2 suggests poor fit or underestimated errors)")
-    print(f"  Fit converged: {'YES' if fit_params['fit_ok'] else 'NO — treat results with caution'}")
+    rp_str = (f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- {fit_params['rp_err']:.5f}"
+              if not np.isnan(fit_params["rp_err"])
+              else f"  Rp/Rs        : {fit_params['rp_val']:.4f} +/- NaN (covariance unavailable)")
+    a_rs_str = (f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- {fit_params['a_rs_err']:.3f}"
+                if not np.isnan(fit_params["a_rs_err"])
+                else f"  a/Rs         : {fit_params['a_rs_val']:.2f} +/- NaN")
+    inc_str = (f"  Inclination  : {fit_params['inc_val']:.3f} +/- {fit_params['inc_err']:.4f} deg"
+               if not np.isnan(fit_params["inc_err"])
+               else f"  Inclination  : {fit_params['inc_val']:.3f} +/- NaN deg")
+    base_str = (f"  Baseline     : {fit_params['baseline_val']:.6f} +/- {fit_params['baseline_err']:.2e}"
+                if not np.isnan(fit_params["baseline_err"])
+                else f"  Baseline     : {fit_params['baseline_val']:.6f} +/- NaN")
+
+    logger.info(sep)
+    logger.info("  CHARACTERIZATION vs. NASA EXOPLANET ARCHIVE")
+    logger.info("  Target: %s", target_id)
+    logger.info("  batman C extension: %s", 'YES' if BATMAN_AVAILABLE else 'NO (pure-Python fallback)')
+    logger.info(sep)
+    logger.info("  Depth (ppm)  : fit=%s±%s  |  known=%.1f  |  error=%.1f%%",
+                f"{depth_rec:.1f}", depth_err_str, known['depth_ppm'], depth_err_pct)
+    logger.info("  Duration (h) : fit=%.3f  |  known=%.3f  |  error=%.1f%%",
+                dur_rec, known['duration_hours'], dur_err_pct)
+    logger.info(rp_str)
+    logger.info(a_rs_str)
+    logger.info(inc_str)
+    logger.info(base_str)
+    logger.info("  chi^2 reduced : %.4f  (ideal ~ 1.0; >2 suggests poor fit or underestimated errors)",
+                fit_params['redchi'])
+    logger.info("  Fit converged: %s", 'YES' if fit_params['fit_ok'] else 'NO — treat results with caution')
 
     # Honest commentary
     if depth_err_pct > 20.0:
-        print(f"\n  *** NOTE: Depth error ({depth_err_pct:.1f}%) is above 20%. ***")
-        print("      For a 152-ppm transit (Kepler-10b), the fit is near the noise floor.")
-        print("      Consider: (1) tighter limb-darkening priors, (2) more quarters,")
-        print("      (3) MCMC (emcee, set USE_MCMC=True) for full posterior.")
+        logger.warning("  *** NOTE: Depth error (%.1f%%) is above 20%%. ***", depth_err_pct)
+        logger.warning("      For a 152-ppm transit (Kepler-10b), the fit is near the noise floor.")
+        logger.warning("      Consider: (1) tighter limb-darkening priors, (2) more quarters,")
+        logger.warning("      (3) MCMC (emcee, set USE_MCMC=True) for full posterior.")
     if dur_err_pct > 20.0:
-        print(f"\n  *** NOTE: Duration error ({dur_err_pct:.1f}%) exceeds 20%. ***")
-        print("      Duration is derived from a/Rs and inc; covariance not fully propagated.")
+        logger.warning("  *** NOTE: Duration error (%.1f%%) exceeds 20%%. ***", dur_err_pct)
+        logger.warning("      Duration is derived from a/Rs and inc; covariance not fully propagated.")
 
     if not BATMAN_AVAILABLE:
-        print("\n  *** LIMITATION: Using pure-Python Mandel-Agol approximation. ***")
-        print("      Install batman-package (requires MSVC on Windows) for the")
-        print("      full C-accelerated model.  Accuracy: <0.1% for Rp/Rs < 0.3.")
+        logger.warning("  *** LIMITATION: Using pure-Python Mandel-Agol approximation. ***")
+        logger.warning("      Install batman-package (requires MSVC on Windows) for the")
+        logger.warning("      full C-accelerated model.  Accuracy: <0.1%% for Rp/Rs < 0.3.")
 
-    print("=" * 65 + "\n")
+    logger.info(sep)
 
     return {
         "depth_ppm_fit": depth_rec, "depth_ppm_known": known["depth_ppm"],
